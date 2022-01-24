@@ -20,13 +20,14 @@ if (!singleInstanceEnforcer.WaitOne(0))
 
 Console.Title = $"{args[1]} ingest";
 
-AmcrestTime latestTime = DateTime.MinValue;
+DateTime latestTime = DateTime.MinValue;
+
+Session session = new(args[1], args[2], args[3]);
 
 while (true)
 {
     try
     {
-        Session session = new(args[1], args[2], args[3]);
         MediaFinder? mediaFinder = await session.FileFinding.CreateMediaFinder();
 
         if (mediaFinder == null)
@@ -37,7 +38,7 @@ while (true)
         }
 
         DateTime now = DateTime.Now.Subtract(TimeSpan.FromMinutes(1));
-        Console.WriteLine($"Querying from {latestTime.DateTime} to {now}");
+        Console.WriteLine($"Querying from {latestTime} to {now}");
         QueryStatus status = await session.FileFinding.SetQuery(mediaFinder, 1, latestTime, now);
 
         if (status)
@@ -46,7 +47,7 @@ while (true)
             SortedDictionary<DateTime, QueryItem> uniqueItems = new();
 
             foreach (QueryItem item in items)
-                uniqueItems.TryAdd(item.StartTime.DateTime, item);
+                uniqueItems.TryAdd(item.StartTime, item);
 
             Console.WriteLine($"Found {uniqueItems.Count} new entries");
 
@@ -58,8 +59,8 @@ while (true)
                     break;
                 }
                 await session.DownloadMedia(args[0], item.Value);
-                if (item.Value.EndTime.DateTime >= latestTime.DateTime)
-                    latestTime = item.Value.EndTime.DateTime.Add(TimeSpan.FromSeconds(1));
+                if (item.Value.EndTime >= latestTime)
+                    latestTime = item.Value.EndTime.Add(TimeSpan.FromSeconds(1));
             }
         }
         else
