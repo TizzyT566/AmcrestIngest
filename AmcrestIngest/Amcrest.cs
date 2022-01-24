@@ -571,7 +571,7 @@ namespace AmcrestApi
                 HttpResponseMessage response = await GetDigestResponse($"/cgi-bin/RPC_Loadfile{item.FilePath}");
                 byte[] test = await response.Content.ReadAsByteArrayAsync();
                 response?.Dispose();
-                File.WriteAllBytes(savePath, test);
+                await File.WriteAllBytesAsync(savePath, test);
             }
         }
 
