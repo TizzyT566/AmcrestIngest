@@ -32,36 +32,43 @@ while (true)
         {
             Console.WriteLine($"Unable to initialize MediaFinder, will wait {ERROR_GRACE_TIME}m to try again");
             await Task.Delay((int)TimeSpan.FromMinutes(ERROR_GRACE_TIME).TotalMilliseconds);
-            continue;
-        }
-
-        DateTime now = DateTime.Now.Subtract(TimeSpan.FromMinutes(1));
-        QueryStatus status = await session.FileFinding.SetQuery(mediaFinder, 1, latestTime, now);
-
-        if (status)
-        {
-            IReadOnlyCollection<QueryItem> items = await session.FileFinding.RunQuery(mediaFinder, 100);
-            SortedDictionary<DateTime, QueryItem> uniqueItems = new();
-
-            foreach (QueryItem item in items)
-                uniqueItems.TryAdd(item.StartTime, item);
-
-            foreach (KeyValuePair<DateTime, QueryItem> item in uniqueItems)
-            {
-                if (item.Value.FilePath == null || !item.Value.FilePath.ToLower().EndsWith(".mp4"))
-                {
-                    Console.WriteLine($"Encountered invalid item, retrying");
-                    break;
-                }
-                await session.DownloadMedia(args[0], item.Value);
-                if (item.Value.EndTime >= latestTime)
-                    latestTime = item.Value.EndTime.Add(TimeSpan.FromSeconds(1));
-            }
         }
         else
         {
-            Console.WriteLine($"Upto date, recheck in {RECHECK_INTERVAL}m");
-            await Task.Delay((int)TimeSpan.FromMinutes(RECHECK_INTERVAL).TotalMilliseconds);
+            DateTime now = DateTime.Now.Subtract(TimeSpan.FromMinutes(1));
+            QueryStatus status = await session.FileFinding.SetQuery(mediaFinder, 1, latestTime, now);
+
+            if (status)
+            {
+                IReadOnlyCollection<QueryItem> items = await session.FileFinding.GetQueryItems(mediaFinder, 100);
+
+                DisposeResult disposed = await session.FileFinding.DisposeMediaFinder(mediaFinder);
+
+                SortedDictionary<DateTime, QueryItem> uniqueItems = new();
+
+                foreach (QueryItem item in items)
+                    uniqueItems.TryAdd(item.StartTime, item);
+
+                foreach (KeyValuePair<DateTime, QueryItem> item in uniqueItems)
+                {
+                    if (item.Value.FilePath == null || !item.Value.FilePath.ToLower().EndsWith(".mp4"))
+                    {
+                        Console.WriteLine($"Encountered invalid item, retrying");
+                        break;
+                    }
+                    await session.DownloadMedia(args[0], item.Value);
+                    if (item.Value.EndTime >= latestTime)
+                        latestTime = item.Value.EndTime.Add(TimeSpan.FromSeconds(1));
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Upto date, recheck in {RECHECK_INTERVAL}m");
+
+                DisposeResult disposed = await session.FileFinding.DisposeMediaFinder(mediaFinder);
+
+                await Task.Delay((int)TimeSpan.FromMinutes(RECHECK_INTERVAL).TotalMilliseconds);
+            }
         }
     }
     catch (Exception ex)

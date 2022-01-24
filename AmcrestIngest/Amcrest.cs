@@ -328,7 +328,7 @@ namespace AmcrestApi
                 return status;
             }
 
-            public async Task<IReadOnlyCollection<QueryItem>> RunQuery(MediaFinder mediaFinder, int count = 1)
+            public async Task<IReadOnlyCollection<QueryItem>> GetQueryItems(MediaFinder mediaFinder, int count = 1)
             {
                 if (count < 1)
                     count = 1;
