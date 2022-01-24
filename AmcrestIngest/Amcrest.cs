@@ -7,27 +7,11 @@ using System.Text.RegularExpressions;
 
 namespace AmcrestApi
 {
-    public struct AmcrestTime
-    {
-        public static AmcrestTime Now => new(DateTime.Now);
-        public DateTime DateTime { get; }
-        public AmcrestTime(DateTime dateTime) =>
-            DateTime = dateTime;
-        public override string ToString() =>
-            DateTime.ToString("yyyy-MM-dd\\%20HH:mm:ss");
-        public string ToString(string format) =>
-            DateTime.ToString(format);
-        public static AmcrestTime Parse(string input) =>
-            new(DateTime.Parse(input));
-        public static implicit operator AmcrestTime(DateTime dateTime) =>
-            new(dateTime);
-    }
-
     public class Session
     {
-        private string? _host;
-        private string? _user;
-        private string? _password;
+        private string _host;
+        private string _user;
+        private string _password;
 
         private string? _realm;
         private string? _nonce;
@@ -57,13 +41,11 @@ namespace AmcrestApi
             return sb.ToString();
         }
 
-        private static string GrabHeaderVar(string varName, string header)
+        private static bool TryGrabHeaderVar(string varName, string header, out string? headerVar)
         {
-            var regHeader = new Regex(string.Format(@"{0}=""([^""]*)""", varName));
-            var matchHeader = regHeader.Match(header);
-            if (matchHeader.Success)
-                return matchHeader.Groups[1].Value;
-            throw new ApplicationException(string.Format("Header {0} not found", varName));
+            Match matchHeader = new Regex(@$"{varName}=""([^""]*)""").Match(header);
+            headerVar = matchHeader.Success ? matchHeader.Groups[1].Value : null;
+            return headerVar != null;
         }
 
         private string GetDigestHeader(string dir)
@@ -78,10 +60,9 @@ namespace AmcrestApi
                 _user, _realm, _nonce, dir, digestResponse, _qop, _nc, _cnonce);
         }
 
-        public async Task<HttpContent> GetDigestAuthResponse(string dir)
+        public async Task<HttpResponseMessage> GetDigestResponse(string dir)
         {
-            var url = _host + dir;
-            var uri = new Uri(url);
+            Uri uri = new(_host + dir);
 
             using HttpClient client = new();
 
@@ -107,21 +88,12 @@ namespace AmcrestApi
                 {
                     if (auth.Parameter == null)
                         continue;
-                    if (getRealm)
-                    {
-                        _realm = GrabHeaderVar("realm", auth.Parameter);
+                    if (getRealm && TryGrabHeaderVar("realm", auth.Parameter, out _realm))
                         getRealm = false;
-                    }
-                    if (getNonce)
-                    {
-                        _nonce = GrabHeaderVar("nonce", auth.Parameter);
+                    if (getNonce && TryGrabHeaderVar("nonce", auth.Parameter, out _nonce))
                         getNonce = false;
-                    }
-                    if (getQop)
-                    {
-                        _qop = GrabHeaderVar("qop", auth.Parameter);
+                    if (getQop && TryGrabHeaderVar("qop", auth.Parameter, out _qop))
                         getQop = false;
-                    }
                 }
 
                 _nc = 0;
@@ -134,7 +106,7 @@ namespace AmcrestApi
                 response = await client.SendAsync(request);
             }
             request?.Dispose();
-            return response.Content;
+            return response;
         }
 
         public Session(string host, string user, string password)
@@ -238,7 +210,7 @@ namespace AmcrestApi
                 }
             }
 
-            public class Types
+            public struct Types
             {
                 public static readonly Types Dav = new("dav");
                 public static readonly Types Jpg = new("jpg");
@@ -248,17 +220,15 @@ namespace AmcrestApi
                     _type = type;
                 public override string ToString() =>
                     _type;
-                public static bool TryParse(string input, out Types? type)
+                public static Types? TryParse(string input)
                 {
                     if (input == Dav._type)
-                        type = Dav;
+                        return Dav;
                     else if (input == Jpg._type)
-                        type = Jpg;
+                        return Jpg;
                     else if (input == Mp4._type)
-                        type = Mp4;
-                    else
-                        type = null;
-                    return type != null;
+                        return Mp4;
+                    return null;
                 }
             }
 
@@ -283,7 +253,7 @@ namespace AmcrestApi
                 public string? CutLength { get; set; }
                 public string? Disk { get; set; }
                 public string? Duration { get; set; }
-                public AmcrestTime EndTime { get; set; }
+                public DateTime EndTime { get; set; }
                 internal Dictionary<int, Events>? _events;
                 public IReadOnlyDictionary<int, Events>? Events => _events;
                 public string? FilePath { get; set; }
@@ -293,48 +263,48 @@ namespace AmcrestApi
                 public string? Partition { get; set; }
                 public string? PicIndex { get; set; }
                 public string? Repeat { get; set; }
-                public AmcrestTime StartTime { get; set; }
+                public DateTime StartTime { get; set; }
                 public Summary? Summary { get; set; }
                 public Types? Type { get; set; }
                 public string? VideoStream { get; set; }
                 public string? WorkDir { get; set; }
                 public string? WorkDirSN { get; set; }
-
-                internal void Integrate(string line)
-                {
-                    int indexDelimit = line.IndexOf('=');
-                    string[] left = line[..indexDelimit].Split('.');
-                    string right = line[(indexDelimit + 1)..];
-                    Console.WriteLine(line);
-                }
             }
 
-            public struct CloseResult
+            public struct DisposeResult
             {
                 public bool Status { get; }
-                private CloseResult(bool status) =>
+                private DisposeResult(bool status) =>
                     Status = status;
-                public static CloseResult Parse(string response) =>
-                    response.Trim().ToLower() == "ok" ? new CloseResult(true) : new CloseResult(false);
-                public static implicit operator bool(CloseResult startFindResult) =>
+                public static DisposeResult Parse(string response) =>
+                    response.Trim().ToLower() == "ok" ? new DisposeResult(true) : new DisposeResult(false);
+                public static implicit operator bool(DisposeResult startFindResult) =>
                     startFindResult.Status;
             }
 
-            public async Task<MediaFinder?> CreateMediaFinder() =>
-                MediaFinder.Parse(await (await _session.GetDigestAuthResponse("/cgi-bin/mediaFileFind.cgi?action=factory.create")).ReadAsStringAsync());
+            public async Task<MediaFinder?> CreateMediaFinder()
+            {
+                HttpResponseMessage response = await _session.GetDigestResponse("/cgi-bin/mediaFileFind.cgi?action=factory.create");
+                MediaFinder? finder = MediaFinder.Parse(await response.Content.ReadAsStringAsync());
+                response?.Dispose();
+                return finder;
+            }
 
-            public async Task<QueryStatus> SetQuery(
-                MediaFinder mediaFinder,
-                int channel,
-                AmcrestTime startTime,
-                AmcrestTime endTime,
-                string[]? dir = null,
-                Types[]? types = null,
-                Flags[]? flags = null,
-                Events[]? events = null)
+            public async Task<DisposeResult> DisposeMediaFinder(MediaFinder mediaFinder)
+            {
+                HttpResponseMessage response = await _session.GetDigestResponse($"/cgi-bin/mediaFileFind.cgi?action=destroy&object={mediaFinder}");
+                DisposeResult disposeResult = DisposeResult.Parse(await response.Content.ReadAsStringAsync());
+                response?.Dispose();
+                return disposeResult;
+            }
+
+            public async Task<QueryStatus> SetQuery(MediaFinder mediaFinder, int channel, DateTime startTime,
+                DateTime endTime, string[]? dir = null, Types[]? types = null, Flags[]? flags = null, Events[]? events = null)
             {
                 StringBuilder sb = new();
-                sb.Append($"/cgi-bin/mediaFileFind.cgi?action=findFile&object={mediaFinder}&condition.Channel={channel}");
+                sb.Append($"/cgi-bin/mediaFileFind.cgi?action=findFile");
+                sb.Append($"&object={mediaFinder}");
+                sb.Append($"&condition.Channel={channel}");
 
                 if (dir != null)
                     for (int i = 0; i < dir.Length; i++)
@@ -349,42 +319,50 @@ namespace AmcrestApi
                     for (int i = 0; i < events.Length; i++)
                         sb.Append($"&conditon.Event[{i}]={events[i]}");
 
-                sb.Append($"&condition.StartTime={startTime}&condition.EndTime={endTime}");
+                sb.Append($"&condition.StartTime={startTime:yyyy-MM-dd\\%20HH:mm:ss}");
+                sb.Append($"&condition.EndTime={endTime:yyyy-MM-dd\\%20HH:mm:ss}");
 
-                return QueryStatus.Parse(await (await _session.GetDigestAuthResponse(sb.ToString())).ReadAsStringAsync());
+                HttpResponseMessage response = await _session.GetDigestResponse(sb.ToString());
+                QueryStatus status = QueryStatus.Parse(await response.Content.ReadAsStringAsync());
+                response?.Dispose();
+                return status;
             }
 
             public async Task<IReadOnlyCollection<QueryItem>> RunQuery(MediaFinder mediaFinder, int count = 1)
             {
-                string response = await (await _session.GetDigestAuthResponse($"/cgi-bin/mediaFileFind.cgi?action=findNextFile&object={mediaFinder}&count={count}")).ReadAsStringAsync();
+                if (count < 1)
+                    count = 1;
+                if (count > 100)
+                    count = 100;
 
-                int indexFirstLine = response.IndexOf('\n');
-                if (indexFirstLine > 0 && int.TryParse(response[6..indexFirstLine], out int found))
+                HttpResponseMessage response = await _session.GetDigestResponse($"/cgi-bin/mediaFileFind.cgi?action=findNextFile&object={mediaFinder}&count={count}");
+                string result = await response.Content.ReadAsStringAsync();
+                response?.Dispose();
+
+                int indexFirstLine = result.IndexOf('\n');
+                if (indexFirstLine > 0 && int.TryParse(result[6..indexFirstLine], out int found))
                 {
                     QueryItem[] queryItems = new QueryItem[found];
 
-                    for (int i = indexFirstLine + 1, start = i; i < response.Length; i++)
+                    for (int i = indexFirstLine + 1, start = i; i < result.Length; i++)
                     {
-                        if (response[i] == '\n')
+                        if (result[i] == '\n')
                         {
-                            string line = response[start..i];
+                            int equalIndex = result.IndexOf('=', start, i - start);
+                            string left = result[start..equalIndex];
+                            string right = result[(equalIndex + 1)..i].Trim();
 
-                            int equalIndex = line.IndexOf('=');
-                            string left = line[..equalIndex];
-                            string right = line[(equalIndex + 1)..].Trim();
+                            string[] leftParts = left.Split('.');
 
-                            string[] lineParts = left.Split('.');
-
-                            int indexStart = lineParts[0].IndexOf('[') + 1;
-                            int indexEnd = lineParts[0].IndexOf(']');
+                            int indexStart = leftParts[0].IndexOf('[') + 1;
+                            int indexEnd = leftParts[0].IndexOf(']');
                             if (int.TryParse(left[indexStart..indexEnd], out int itemIndex))
                             {
-                                if (queryItems[itemIndex] == null)
-                                    queryItems[itemIndex] = new();
+                                queryItems[itemIndex] ??= new();
 
                                 QueryItem currentItem = queryItems[itemIndex];
 
-                                switch (lineParts[1])
+                                switch (leftParts[1])
                                 {
                                     case "Channel":
                                         {
@@ -413,7 +391,7 @@ namespace AmcrestApi
                                         }
                                     case "EndTime":
                                         {
-                                            currentItem.EndTime = AmcrestTime.Parse(right);
+                                            currentItem.EndTime = DateTime.Parse(right);
                                             break;
                                         }
                                     case "FilePath":
@@ -443,80 +421,73 @@ namespace AmcrestApi
                                         }
                                     case "StartTime":
                                         {
-                                            currentItem.StartTime = AmcrestTime.Parse(right);
+                                            currentItem.StartTime = DateTime.Parse(right);
                                             break;
                                         }
                                     case "Summary":
                                         {
-                                        recheckSummary:
-                                            if (currentItem.Summary == null)
+                                            if (leftParts.Length < 3)
+                                                break;
+
+                                            switch (leftParts[2]) // using a switch in case of extensions in the future
                                             {
-                                                currentItem.Summary = new();
-                                                goto recheckSummary;
-                                            }
-                                            else
-                                            {
-                                                switch (lineParts[2]) // using a switch in case of extensions in the future
-                                                {
-                                                    case "TrafficCar":
+                                                case "TrafficCar":
+                                                    {
+                                                        currentItem.Summary ??= new();
+
+                                                        if (leftParts.Length < 4)
+                                                            break;
+                                                        switch (leftParts[3])
                                                         {
-                                                        recheckTrafficCar:
-                                                            if (currentItem.Summary.TrafficCar == null)
-                                                            {
-                                                                currentItem.Summary.TrafficCar = new();
-                                                                goto recheckTrafficCar;
-                                                            }
-                                                            else
-                                                            {
-                                                                switch (lineParts[3])
+                                                            case "PlateColor":
                                                                 {
-                                                                    case "PlateColor":
-                                                                        {
-                                                                            currentItem.Summary.TrafficCar.PlateColor = right;
-                                                                            break;
-                                                                        }
-                                                                    case "PlateNumber":
-                                                                        {
-                                                                            currentItem.Summary.TrafficCar.PlateNumber = right;
-                                                                            break;
-                                                                        }
-                                                                    case "PlateType":
-                                                                        {
-                                                                            currentItem.Summary.TrafficCar.PlateType = right;
-                                                                            break;
-                                                                        }
-                                                                    case "Speed":
-                                                                        {
-                                                                            currentItem.Summary.TrafficCar.Speed = right;
-                                                                            break;
-                                                                        }
-                                                                    case "VehicleColor":
-                                                                        {
-                                                                            currentItem.Summary.TrafficCar.VehicleColor = right;
-                                                                            break;
-                                                                        }
-                                                                    default:
-                                                                        {
-                                                                            Console.WriteLine($"New Summary.TrafficCar property: {lineParts[3]}");
-                                                                            break;
-                                                                        }
+                                                                    currentItem.Summary.TrafficCar ??= new();
+                                                                    currentItem.Summary.TrafficCar.PlateColor = right;
+                                                                    break;
                                                                 }
-                                                            }
-                                                            break;
+                                                            case "PlateNumber":
+                                                                {
+                                                                    currentItem.Summary.TrafficCar ??= new();
+                                                                    currentItem.Summary.TrafficCar.PlateNumber = right;
+                                                                    break;
+                                                                }
+                                                            case "PlateType":
+                                                                {
+                                                                    currentItem.Summary.TrafficCar ??= new();
+                                                                    currentItem.Summary.TrafficCar.PlateType = right;
+                                                                    break;
+                                                                }
+                                                            case "Speed":
+                                                                {
+                                                                    currentItem.Summary.TrafficCar ??= new();
+                                                                    currentItem.Summary.TrafficCar.Speed = right;
+                                                                    break;
+                                                                }
+                                                            case "VehicleColor":
+                                                                {
+                                                                    currentItem.Summary.TrafficCar ??= new();
+                                                                    currentItem.Summary.TrafficCar.VehicleColor = right;
+                                                                    break;
+                                                                }
+                                                            default:
+                                                                {
+                                                                    Console.WriteLine($"New Summary.TrafficCar property: {leftParts[3]}");
+                                                                    break;
+                                                                }
                                                         }
-                                                    default:
-                                                        {
-                                                            Console.WriteLine($"New Summary property: {lineParts[2]}");
-                                                            break;
-                                                        }
-                                                }
+                                                        break;
+                                                    }
+                                                default:
+                                                    {
+                                                        Console.WriteLine($"New Summary property: {leftParts[2]}");
+                                                        break;
+                                                    }
                                             }
                                             break;
                                         }
                                     case "Type":
                                         {
-                                            _ = Types.TryParse(right, out Types? type);
-                                            currentItem.Type = type;
+                                            currentItem.Type = Types.TryParse(right);
                                             break;
                                         }
                                     case "VideoStream":
@@ -536,33 +507,26 @@ namespace AmcrestApi
                                         }
                                     default:
                                         {
-                                            // for Flags and Events
-                                            int secondaryIndexStart = lineParts[1].IndexOf('[') + 1;
-                                            int secondaryIndexEnd = lineParts[1].IndexOf(']');
+                                            int secondaryIndexStart = leftParts[1].IndexOf('[') + 1;
+                                            int secondaryIndexEnd = leftParts[1].IndexOf(']');
 
-                                            if (int.TryParse(lineParts[1][secondaryIndexStart..secondaryIndexEnd], out int secondaryIndex))
+                                            if (int.TryParse(leftParts[1][secondaryIndexStart..secondaryIndexEnd], out int secondaryIndex))
                                             {
-                                                if (lineParts[1].StartsWith("Events["))
+                                                if (leftParts[1].StartsWith("Events["))
                                                 {
-                                                recheckEvents:
-                                                    if (currentItem._events == null)
+                                                    if (Events.TryParse(right, out Events? @event) && @event != null)
                                                     {
-                                                        currentItem._events = new();
-                                                        goto recheckEvents;
-                                                    }
-                                                    else if (Events.TryParse(right, out Events? @event) && @event != null)
+                                                        currentItem._events ??= new();
                                                         currentItem._events.TryAdd(secondaryIndex, @event);
-                                                }
-                                                else if (lineParts[1].StartsWith("Flags["))
-                                                {
-                                                recheckFlags:
-                                                    if (currentItem._flags == null)
-                                                    {
-                                                        currentItem._flags = new();
-                                                        goto recheckFlags;
                                                     }
-                                                    else if (Flags.TryParse(right, out Flags? flag) && flag != null)
+                                                }
+                                                else if (leftParts[1].StartsWith("Flags["))
+                                                {
+                                                    if (Flags.TryParse(right, out Flags? flag) && flag != null)
+                                                    {
+                                                        currentItem._flags ??= new();
                                                         currentItem._flags.TryAdd(secondaryIndex, flag);
+                                                    }
                                                 }
                                             }
                                             break;
@@ -583,36 +547,32 @@ namespace AmcrestApi
 
         public async Task DownloadMedia(string folderPath, FileFindingApi.QueryItem item)
         {
-            if (item.FilePath != null)
+            if (item.FilePath != null && item.FilePath.Trim() != "")
             {
                 string savePath = Path.GetFullPath(folderPath);
-                savePath = Path.Combine(savePath, item.StartTime.DateTime.ToString("yyyy"));
-                savePath = Path.Combine(savePath, item.StartTime.DateTime.ToString("MM"));
-                savePath = Path.Combine(savePath, item.StartTime.DateTime.ToString("dd"));
-                savePath = Path.Combine(savePath, item.StartTime.DateTime.ToString("HH ❨h tt❩", CultureInfo.InvariantCulture));
+                savePath = Path.Combine(savePath, item.StartTime.ToString("yyyy"));
+                savePath = Path.Combine(savePath, item.StartTime.ToString("MM"));
+                savePath = Path.Combine(savePath, item.StartTime.ToString("dd"));
+                savePath = Path.Combine(savePath, item.StartTime.ToString("HH ❨h tt❩", CultureInfo.InvariantCulture));
 
                 if (!Directory.Exists(savePath))
                     Directory.CreateDirectory(savePath);
 
                 string ext = Path.GetExtension(item.FilePath);
 
-                savePath = Path.Combine(savePath, $"{item.StartTime.DateTime:yyyy-MM-dd hh∶mm∶ss tt} ❯ {item.EndTime.DateTime:yyyy-MM-dd hh∶mm∶ss tt}{ext}");
+                string fileName = $"{item.StartTime:yyyy-MM-dd hh∶mm∶ss tt} ❯ {item.EndTime:yyyy-MM-dd hh∶mm∶ss tt}{ext}";
+
+                savePath = Path.Combine(savePath, fileName);
 
                 if (File.Exists(savePath))
-                {
-                    Console.WriteLine($"Exists, Skipping: {savePath}");
                     return;
-                }
 
-                // delay as to not overwork the camera
-                await Task.Delay(1000);
-
-                Console.WriteLine($@"Saving: {savePath}");
-                byte[] test = await (await GetDigestAuthResponse($"/cgi-bin/RPC_Loadfile{item.FilePath}")).ReadAsByteArrayAsync();
+                Console.WriteLine($"Saving: {fileName}");
+                HttpResponseMessage response = await GetDigestResponse($"/cgi-bin/RPC_Loadfile{item.FilePath}");
+                byte[] test = await response.Content.ReadAsByteArrayAsync();
+                response?.Dispose();
                 File.WriteAllBytes(savePath, test);
             }
-            else
-                throw new ArgumentNullException("Time properties are missing.", "StartTime/EndTime");
         }
 
     }

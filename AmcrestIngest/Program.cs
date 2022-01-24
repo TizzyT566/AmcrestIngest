@@ -10,23 +10,22 @@ if (args.Length < 4)
     return;
 }
 
-Uri uri = new(args[1]);
-Mutex singleInstanceEnforcer = new(false, uri.ToString());
-if (!singleInstanceEnforcer.WaitOne(0))
+Mutex singleInstanceMutex = new(false, new Uri(args[1]).ToString());
+if (!singleInstanceMutex.WaitOne(0))
 {
-    Console.WriteLine("Only one instance per camera");
+    Console.WriteLine("Only one instance per host");
     return;
 }
 
 Console.Title = $"{args[1]} ingest";
 
-AmcrestTime latestTime = DateTime.MinValue;
+DateTime latestTime = DateTime.MinValue;
+Session session = new(args[1], args[2], args[3]);
 
 while (true)
 {
     try
     {
-        Session session = new(args[1], args[2], args[3]);
         MediaFinder? mediaFinder = await session.FileFinding.CreateMediaFinder();
 
         if (mediaFinder == null)
@@ -37,7 +36,6 @@ while (true)
         }
 
         DateTime now = DateTime.Now.Subtract(TimeSpan.FromMinutes(1));
-        Console.WriteLine($"Querying from {latestTime.DateTime} to {now}");
         QueryStatus status = await session.FileFinding.SetQuery(mediaFinder, 1, latestTime, now);
 
         if (status)
@@ -46,32 +44,29 @@ while (true)
             SortedDictionary<DateTime, QueryItem> uniqueItems = new();
 
             foreach (QueryItem item in items)
-                uniqueItems.TryAdd(item.StartTime.DateTime, item);
-
-            Console.WriteLine($"Found {uniqueItems.Count} new entries");
+                uniqueItems.TryAdd(item.StartTime, item);
 
             foreach (KeyValuePair<DateTime, QueryItem> item in uniqueItems)
             {
-                if (item.Value.FilePath == null || item.Value.FilePath.EndsWith("_"))
+                if (item.Value.FilePath == null || !item.Value.FilePath.ToLower().EndsWith(".mp4"))
                 {
                     Console.WriteLine($"Encountered invalid item, retrying");
                     break;
                 }
                 await session.DownloadMedia(args[0], item.Value);
-                if (item.Value.EndTime.DateTime >= latestTime.DateTime)
-                    latestTime = item.Value.EndTime.DateTime.Add(TimeSpan.FromSeconds(1));
+                if (item.Value.EndTime >= latestTime)
+                    latestTime = item.Value.EndTime.Add(TimeSpan.FromSeconds(1));
             }
         }
         else
         {
-            Console.WriteLine($"Upto date, will wait {RECHECK_INTERVAL}m to recheck");
+            Console.WriteLine($"Upto date, recheck in {RECHECK_INTERVAL}m");
             await Task.Delay((int)TimeSpan.FromMinutes(RECHECK_INTERVAL).TotalMilliseconds);
         }
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"General exception: {ex.Message}, will wait {ERROR_GRACE_TIME}m to try again");
-        Console.WriteLine(ex.StackTrace);
+        Console.WriteLine($"General exception: {ex.Message}, will wait {ERROR_GRACE_TIME}m to try again\n{ex.StackTrace}");
         await Task.Delay((int)TimeSpan.FromMinutes(ERROR_GRACE_TIME).TotalMilliseconds);
     }
 }
