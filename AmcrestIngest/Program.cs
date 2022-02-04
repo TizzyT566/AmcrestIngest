@@ -1,8 +1,7 @@
 ﻿using AmcrestApi;
 using static AmcrestApi.Session.FileFindingApi;
 
-const int ERROR_GRACE_TIME = 1;
-const int RECHECK_INTERVAL = 5;
+const int RECHECK_INTERVAL = 1;
 
 if (args.Length < 4)
 {
@@ -30,8 +29,8 @@ while (true)
 
         if (mediaFinder == null)
         {
-            Console.WriteLine($"Unable to initialize MediaFinder, will wait {ERROR_GRACE_TIME}m to try again");
-            await Task.Delay((int)TimeSpan.FromMinutes(ERROR_GRACE_TIME).TotalMilliseconds);
+            Console.WriteLine($"Unable to initialize MediaFinder, will wait {RECHECK_INTERVAL}m to try again");
+            await Task.Delay((int)TimeSpan.FromMinutes(RECHECK_INTERVAL).TotalMilliseconds);
         }
         else
         {
@@ -73,7 +72,7 @@ while (true)
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"General exception: {ex.Message}, will wait {ERROR_GRACE_TIME}m to try again\n{ex.StackTrace}");
-        await Task.Delay((int)TimeSpan.FromMinutes(ERROR_GRACE_TIME).TotalMilliseconds);
+        Console.WriteLine($"General exception: {ex.Message}, will wait {RECHECK_INTERVAL}m to try again\n{ex.StackTrace}");
+        await Task.Delay((int)TimeSpan.FromMinutes(RECHECK_INTERVAL).TotalMilliseconds);
     }
 }
