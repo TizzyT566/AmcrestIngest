@@ -3,11 +3,19 @@ using static AmcrestApi.Session.FileFindingApi;
 
 const int RECHECK_INTERVAL = 1;
 
-if (args.Length < 4)
+if (args.Length < 5)
 {
-    Console.WriteLine("Missing arguments:\n   0) Save Directory\n   1) Host Address\n   2) Username\n   3) Password");
+    Console.WriteLine("Missing arguments:\n   0) Save Directory\n   1) Host Address\n   2) Username\n   3) Password\n   4) CombSize (GB)");
     return;
 }
+
+int combSize;
+if (!int.TryParse(args[0], out combSize))
+{
+    Console.WriteLine("Invalid CombSize argument. Must be an integer");
+    return;
+}
+combSize *= 1073741824; // Multiply by 1GB
 
 Mutex singleInstanceMutex = new(false, new Uri(args[1]).ToString());
 if (!singleInstanceMutex.WaitOne(0))
@@ -18,7 +26,34 @@ if (!singleInstanceMutex.WaitOne(0))
 
 Console.Title = $"{args[1]} ingest";
 
-DateTime latestTime = DateTime.MinValue;
+Queue<string> getFiles()
+{
+    string[]? previousFiles = Directory.GetFiles(args[0], "*.*", SearchOption.AllDirectories);
+    SortedList<DateTime, string> previousFilesSorted = new();
+    foreach (string file in previousFiles)
+    {
+        string[] parts = file.Split(" ❯ ");
+        if (parts.Length == 2 && DateTime.TryParse(parts[0], out DateTime fileDateTime))
+            previousFilesSorted.Add(fileDateTime, file);
+    }
+    Queue<string> result = new();
+    foreach (KeyValuePair<DateTime, string> file in previousFilesSorted)
+        result.Enqueue(file.Value);
+    return result;
+}
+
+Queue<string> previousFiles = getFiles();
+
+void CombOldFiles()
+{
+    DriveInfo driveInfo = new(args[0][..1]);
+    if (previousFiles.Count == 0)
+        previousFiles = getFiles();
+    while (driveInfo.AvailableFreeSpace < combSize && previousFiles.TryDequeue(out string? file))
+        File.Delete(file);
+}
+
+DateTime latestTime = DateTime.Now.Subtract(TimeSpan.FromDays(30));
 Session session = new(args[1], args[2], args[3]);
 
 while (true)
@@ -41,7 +76,7 @@ while (true)
             {
                 IReadOnlyCollection<QueryItem> items = await session.FileFinding.GetQueryItems(mediaFinder, 100);
 
-                DisposeResult disposed = await session.FileFinding.DisposeMediaFinder(mediaFinder);
+                _ = await session.FileFinding.DisposeMediaFinder(mediaFinder);
 
                 SortedDictionary<DateTime, QueryItem> uniqueItems = new();
 
@@ -55,7 +90,10 @@ while (true)
                         Console.WriteLine($"Encountered invalid item, retrying");
                         break;
                     }
-                    await session.DownloadMedia(args[0], item.Value);
+                    CombOldFiles();
+                    string? newFile = await session.DownloadMedia(args[0], item.Value);
+                    if(newFile != null)
+                        previousFiles.Enqueue(newFile);
                     if (item.Value.EndTime >= latestTime)
                         latestTime = item.Value.EndTime.Add(TimeSpan.FromSeconds(1));
                 }
@@ -63,9 +101,7 @@ while (true)
             else
             {
                 Console.WriteLine($"Upto date, recheck in {RECHECK_INTERVAL}m");
-
-                DisposeResult disposed = await session.FileFinding.DisposeMediaFinder(mediaFinder);
-
+                _ = await session.FileFinding.DisposeMediaFinder(mediaFinder);
                 await Task.Delay((int)TimeSpan.FromMinutes(RECHECK_INTERVAL).TotalMilliseconds);
             }
         }

@@ -545,34 +545,40 @@ namespace AmcrestApi
                 _session = session;
         }
 
-        public async Task DownloadMedia(string folderPath, FileFindingApi.QueryItem item)
+        public async Task<string?> DownloadMedia(string folderPath, FileFindingApi.QueryItem item)
         {
-            if (item.FilePath != null && item.FilePath.Trim() != "")
+            try
             {
-                string savePath = Path.GetFullPath(folderPath);
-                savePath = Path.Combine(savePath, item.StartTime.ToString("yyyy"));
-                savePath = Path.Combine(savePath, item.StartTime.ToString("MM"));
-                savePath = Path.Combine(savePath, item.StartTime.ToString("dd"));
-                savePath = Path.Combine(savePath, item.StartTime.ToString("HH ❨h tt❩", CultureInfo.InvariantCulture));
+                if (item.FilePath != null && item.FilePath.Trim() != "")
+                {
+                    string savePath = Path.GetFullPath(folderPath);
+                    savePath = Path.Combine(savePath, item.StartTime.ToString("yyyy"));
+                    savePath = Path.Combine(savePath, item.StartTime.ToString("MM"));
+                    savePath = Path.Combine(savePath, item.StartTime.ToString("dd"));
+                    savePath = Path.Combine(savePath, item.StartTime.ToString("HH ❨h tt❩", CultureInfo.InvariantCulture));
 
-                if (!Directory.Exists(savePath))
-                    Directory.CreateDirectory(savePath);
+                    if (!Directory.Exists(savePath))
+                        Directory.CreateDirectory(savePath);
 
-                string ext = Path.GetExtension(item.FilePath);
+                    string ext = Path.GetExtension(item.FilePath);
 
-                string fileName = $"{item.StartTime:yyyy-MM-dd hh∶mm∶ss tt} ❯ {item.EndTime:yyyy-MM-dd hh∶mm∶ss tt}{ext}";
+                    string fileName = $"{item.StartTime:yyyy-MM-dd hh∶mm∶ss tt} ❯ {item.EndTime:yyyy-MM-dd hh∶mm∶ss tt}{ext}";
 
-                savePath = Path.Combine(savePath, fileName);
+                    savePath = Path.Combine(savePath, fileName);
 
-                if (File.Exists(savePath))
-                    return;
+                    if (File.Exists(savePath))
+                        return null;
 
-                Console.WriteLine($"Saving: {fileName}");
-                HttpResponseMessage response = await GetDigestResponse($"/cgi-bin/RPC_Loadfile{item.FilePath}");
-                byte[] test = await response.Content.ReadAsByteArrayAsync();
-                response?.Dispose();
-                await File.WriteAllBytesAsync(savePath, test);
+                    Console.WriteLine($"Saving: {fileName}");
+                    HttpResponseMessage response = await GetDigestResponse($"/cgi-bin/RPC_Loadfile{item.FilePath}");
+                    byte[] test = await response.Content.ReadAsByteArrayAsync();
+                    response?.Dispose();
+                    await File.WriteAllBytesAsync(savePath, test);
+                    return savePath;
+                }
             }
+            catch (Exception) { }
+            return null;
         }
 
     }
