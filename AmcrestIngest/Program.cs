@@ -32,8 +32,8 @@ Queue<string> getFiles()
     SortedList<DateTime, string> previousFilesSorted = new();
     foreach (string file in previousFiles)
     {
-        string[] parts = file.Split(" ❯ ");
-        if (parts.Length == 2 && DateTime.TryParse(parts[0], out DateTime fileDateTime))
+        string[] parts = Path.GetFileName(file).Split(" ❯ ");
+        if (parts.Length == 2 && DateTime.TryParse(parts[0].Replace("∶", ":"), out DateTime fileDateTime))
             previousFilesSorted.Add(fileDateTime, file);
     }
     Queue<string> result = new();
@@ -46,11 +46,18 @@ Queue<string> previousFiles = getFiles();
 
 void CombOldFiles()
 {
-    DriveInfo driveInfo = new(args[0][..1]);
     if (previousFiles.Count == 0)
         previousFiles = getFiles();
+    DriveInfo driveInfo = new(args[0][..1]);
     while (driveInfo.AvailableFreeSpace < combSize && previousFiles.TryDequeue(out string? file))
-        File.Delete(file);
+    {
+        try
+        {
+            File.Delete(file);
+            Console.WriteLine($"Deleted old footage: {file}");
+        }
+        catch (Exception) { }
+    }
 }
 
 DateTime latestTime = DateTime.Now.Subtract(TimeSpan.FromDays(30));
@@ -92,7 +99,7 @@ while (true)
                     }
                     CombOldFiles();
                     string? newFile = await session.DownloadMedia(args[0], item.Value);
-                    if(newFile != null)
+                    if (newFile != null)
                         previousFiles.Enqueue(newFile);
                     if (item.Value.EndTime >= latestTime)
                         latestTime = item.Value.EndTime.Add(TimeSpan.FromSeconds(1));
