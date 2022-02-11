@@ -3,7 +3,7 @@ A program to automatically pull footage off of Amcrest IP cameras.
 
 ## Usage
 ```
-AmcrestIngest.exe <SaveDirectory> <HostAddress> <UserName> <Password>
+AmcrestIngest.exe <SaveDirectory> <HostAddress> <UserName> <Password> <CombSize>
 ```
 
 Upon succesfully connecting the program will start to retrieve all videos stored on the Amcrest ip cameras (stored on sd card).
@@ -16,7 +16,7 @@ In the case of any errors the program will check in regular 1 minute intervals t
 
 ### Example
 ```
-AmcrestIngest.exe "C:\Cameras\Front Yard" http://192.168.0.128 admin password123
+AmcrestIngest.exe "C:\Cameras\Front Yard" http://192.168.0.128 admin password123 5
 ```
 
 Videos will be saved in the \<SaveDirectory\> with the following structure:
@@ -45,6 +45,10 @@ An example of the full path would be:
 ```
 C:\Cameras\Front Yard\2022\01\24\15 ❨3 PM❩\2022-01-24 03∶14∶27 PM ❯ 2022-01-24 03∶14∶50 PM.mp4
 ```
+
+The \<CombSize\> is the number of GB left on the drive the footage is stored for deletion of old footage to start.
+
+Files will continue to be deleted (oldest first) until the specified \<CombSize\> of free space is available.
 
 ## Automation Tip
 
