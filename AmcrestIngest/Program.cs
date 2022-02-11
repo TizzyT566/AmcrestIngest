@@ -10,7 +10,7 @@ if (args.Length < 5)
 }
 
 int combSize;
-if (!int.TryParse(args[0], out combSize))
+if (!int.TryParse(args[4], out combSize))
 {
     Console.WriteLine("Invalid CombSize argument. Must be an integer");
     return;
