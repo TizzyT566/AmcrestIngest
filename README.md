@@ -8,7 +8,7 @@ AmcrestIngest.exe <SaveDirectory> <HostAddress> <UserName> <Password> <CombSize>
 
 Upon succesfully connecting the program will start to retrieve all videos stored on the Amcrest ip cameras (stored on sd card).
 
-It will download all videos and then check in regular 5 minute intervals to see if there are any new videos to download.
+It will download all videos and then check in 1 minute intervals for any new videos to download.
 
 The program will skip any videos that it has already downloaded (found in \<SaveDirectory\>) and will not download them again.
 

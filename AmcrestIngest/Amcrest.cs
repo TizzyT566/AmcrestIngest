@@ -298,8 +298,8 @@ namespace AmcrestApi
                 return disposeResult;
             }
 
-            public async Task<QueryStatus> SetQuery(MediaFinder mediaFinder, int channel, DateTime startTime,
-                DateTime endTime, string[]? dir = null, Types[]? types = null, Flags[]? flags = null, Events[]? events = null)
+            public async Task<QueryStatus> SetQuery(MediaFinder mediaFinder, int channel, DateTime startTime, DateTime endTime,
+                string[]? dir = null, Types[]? types = null, Flags[]? flags = null, Events[]? events = null)
             {
                 StringBuilder sb = new();
                 sb.Append($"/cgi-bin/mediaFileFind.cgi?action=findFile");
