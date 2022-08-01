@@ -12,7 +12,7 @@ if (args.Length < 5)
 int combSize;
 if (!int.TryParse(args[4], out combSize))
 {
-    if(combSize < 1)
+    if (combSize < 1)
         combSize = 1;
     Console.WriteLine("Invalid CombSize argument. Must be an integer");
     return;
@@ -36,7 +36,7 @@ Queue<string> getFiles()
     {
         string[] parts = Path.GetFileName(file).Split(" ❯ ");
         if (parts.Length == 2 && DateTime.TryParse(parts[0].Replace("∶", ":"), out DateTime fileDateTime))
-            previousFilesSorted.Add(fileDateTime, file);
+            previousFilesSorted.TryAdd(fileDateTime, file);
     }
     Queue<string> result = new();
     foreach (KeyValuePair<DateTime, string> file in previousFilesSorted)
